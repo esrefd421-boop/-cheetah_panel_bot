@@ -4,7 +4,7 @@ import time
 import threading
 from telebot import TeleBot, types
 
-ADMIN_ID = 1856262280
+ADMIN_ID = 1472412382
 BOT_TOKEN = "8758745776:AAG5VVacBnPaq69gVOoJRGdTNTIPY_AVz00"
 
 bot = TeleBot(BOT_TOKEN, parse_mode=None)
@@ -218,7 +218,7 @@ def add_dealer(message):
     try:
         args = message.text.split()
         if len(args) < 2:
-            bot.reply_to(message, "❌ Eksik kullanım!\nÖrnek: /bayiekle 1856262280")
+            bot.reply_to(message, "❌ Eksik kullanım!\nÖrnek: /bayiekle 1472412382")
             return
         target_id = int(args[1])
         conn = sqlite3.connect('bot_data.db')
@@ -239,7 +239,7 @@ def remove_dealer(message):
     try:
         args = message.text.split()
         if len(args) < 2:
-            bot.reply_to(message, "❌ Eksik kullanım!\nÖrnek: /bayicikar 1856262280")
+            bot.reply_to(message, "❌ Eksik kullanım!\nÖrnek: /bayicikar 1472412382")
             return
         target_id = int(args[1])
         conn = sqlite3.connect('bot_data.db')
@@ -260,7 +260,7 @@ def add_balance(message):
     try:
         parts = message.text.split()
         if len(parts) < 3:
-            bot.reply_to(message, "❌ Eksik kullanım!\nÖrnek: /bakiyeekle 1856262280 100")
+            bot.reply_to(message, "❌ Eksik kullanım!\nÖrnek: /bakiyeekle 1472412382 100")
             return
         target_id = int(parts[1])
         amount = int(parts[2])
