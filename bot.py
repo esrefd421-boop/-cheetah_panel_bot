@@ -73,6 +73,9 @@ def create_user(user_id, username):
         c = conn.cursor()
         c.execute("INSERT OR IGNORE INTO users (user_id, username, reg_date) VALUES (?, ?, ?)",
                   (user_id, username, datetime.datetime.now().strftime("%Y-%m-%d %H:%M")))
+        # Eğer gelen kişi adminse direkt rolünü ve bakiye garantisini verelim
+        if user_id == ADMIN_ID:
+            c.execute("UPDATE users SET role='ADMIN', balance=10000 WHERE user_id=?", (ADMIN_ID,))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -103,6 +106,8 @@ def is_admin(user_id):
     return user_id == ADMIN_ID
 
 def is_dealer(user_id):
+    if user_id == ADMIN_ID:
+        return True
     user = get_user(user_id)
     if not user:
         return False
@@ -141,11 +146,11 @@ def create_main_menu(user_id):
 
 def get_user_info_text(user_id):
     user = get_user(user_id)
-    if not user:
+    if not user and user_id != ADMIN_ID:
         return "❌ Kullanıcı bulunamadı."
-    role = user[2]
-    balance = user[3]
-    username = user[1] or "Belirtilmemiş"
+    role = "ADMIN" if user_id == ADMIN_ID else (user[2] if user else "KULLANICI")
+    balance = 10000 if user_id == ADMIN_ID else (user[3] if user else 0)
+    username = "Admin" if user_id == ADMIN_ID else (user[1] or "Belirtilmemiş")
     role_emoji = {"ADMIN": "👑", "BAYI": "🤝", "KULLANICI": "👤"}.get(role, "👤")
     if is_dealer(user_id):
         text = f"🌟 Merhaba CheetahPanel'e Hoş Geldiniz {username}! 🌟\n"
@@ -343,11 +348,9 @@ def callback_handler(call):
                 bot.answer_callback_query(call.id, "❌ Stokta lisans kalmadı!", show_alert=True)
                 return
             user = get_user(user_id)
-            if not user:
-                bot.answer_callback_query(call.id, "❌ Kullanıcı bulunamadı!", show_alert=True)
-                return
-            if user[3] < price:
-                bot.answer_callback_query(call.id, f"❌ Yetersiz bakiye! Mevcut: {user[3]} TL", show_alert=True)
+            user_bal = 10000 if user_id == ADMIN_ID else (user[3] if user else 0)
+            if user_bal < price:
+                bot.answer_callback_query(call.id, f"❌ Yetersiz bakiye! Mevcut: {user_bal} TL", show_alert=True)
                 return
             conn = sqlite3.connect('bot_data.db')
             c = conn.cursor()
@@ -410,11 +413,8 @@ def callback_handler(call):
             return
         
         if data == "balance":
-            user = get_user(user_id)
-            if not user:
-                text = "❌ Kullanıcı bulunamadı."
-            else:
-                text = f"💰 Bakiyeniz\n\n💵 Mevcut Bakiye: {user[3]} TL\n👤 Kullanıcı: {user[1] or 'Belirtilmemiş'}\n👑 Rol: {user[2]}"
+            user_bal = 10000 if user_id == ADMIN_ID else (get_user(user_id)[3] if get_user(user_id) else 0)
+            text = f"💰 Bakiyeniz\n\n💵 Mevcut Bakiye: {user_bal} TL\n👤 Kullanıcı: Admin\n👑 Rol: ADMIN" if user_id == ADMIN_ID else f"💰 Bakiyeniz\n\n💵 Mevcut Bakiye: {user_bal} TL"
             markup = types.InlineKeyboardMarkup()
             markup.add(
                 types.InlineKeyboardButton("💳 Bakiye Yükle", callback_data="add_balance_request"),
@@ -459,137 +459,4 @@ def callback_handler(call):
         if data == "reset_device":
             conn = sqlite3.connect('bot_data.db')
             c = conn.cursor()
-            c.execute("SELECT key, duration, expire_date FROM keys WHERE used_by=? AND status='used'", (user_id,))
-            keys = c.fetchall()
-            conn.close()
-            if not keys:
-                text = "🔄 Cihaz Sıfırla\n\n❌ Kullanımda lisansınız yok."
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
-            else:
-                text = "🔄 Cihaz Sıfırla\n\nSadece süresi dolmamış lisanslar sıfırlanabilir!\n"
-                markup = types.InlineKeyboardMarkup(row_width=1)
-                has_valid = False
-                for key, duration, expire_date in keys:
-                    expired = False
-                    if expire_date:
-                        try:
-                            exp = datetime.datetime.strptime(expire_date, "%Y-%m-%d %H:%M")
-                            if datetime.datetime.now() > exp:
-                                expired = True
-                        except:
-                            pass
-                    if not expired:
-                        has_valid = True
-                        markup.add(types.InlineKeyboardButton(f"⏱️ {duration} - {key[:8]}... (Aktif)", callback_data=f"reset_{key}"))
-                    else:
-                        markup.add(types.InlineKeyboardButton(f"⏱️ {duration} - {key[:8]}... (🔴 Süresi Doldu)", callback_data="expired_key"))
-                if not has_valid:
-                    text += "\n❌ Sıfırlanabilecek aktif lisans yok."
-                markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
-            try:
-                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
-            except:
-                bot.send_message(user_id, text, reply_markup=markup)
-            return
-        
-        if data.startswith("reset_"):
-            key = data.split("_")[1]
-            conn = sqlite3.connect('bot_data.db')
-            c = conn.cursor()
-            c.execute("SELECT expire_date FROM keys WHERE key=? AND used_by=?", (key, user_id))
-            result = c.fetchone()
-            if not result:
-                conn.close()
-                bot.answer_callback_query(call.id, "❌ Lisans bulunamadı!", show_alert=True)
-                return
-            expire_date = result[0]
-            if expire_date:
-                try:
-                    exp = datetime.datetime.strptime(expire_date, "%Y-%m-%d %H:%M")
-                    if datetime.datetime.now() > exp:
-                        conn.close()
-                        bot.answer_callback_query(call.id, "❌ Lisansın süresi dolmuş! Sıfırlanamaz!", show_alert=True)
-                        return
-                except:
-                    pass
-            c.execute("UPDATE keys SET hwid=NULL WHERE key=? AND used_by=?", (key, user_id))
-            conn.commit()
-            conn.close()
-            bot.answer_callback_query(call.id, "✅ Cihaz sıfırlandı!", show_alert=True)
-            markup = create_main_menu(user_id)
-            text = get_user_info_text(user_id)
-            try:
-                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
-            except:
-                bot.send_message(user_id, text, reply_markup=markup)
-            return
-        
-        if data == "support":
-            text = "📞 Destek Merkezi\n\n💬 Yardım için: @DEXTERWXP"
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
-            try:
-                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
-            except:
-                bot.send_message(user_id, text, reply_markup=markup)
-            return
-        
-        if data == "dexter":
-            text = "👤 @DEXTERWXP\n\n🔹 Kurucu ve Baş Geliştirici\n🔹 CheetahPanel Sahibi\n🔹 PUBG Mobile Hile Uzmanı\n\n📌 İletişim: @DEXTERWXP"
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
-            try:
-                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
-            except:
-                bot.send_message(user_id, text, reply_markup=markup)
-            return
-        
-        if data == "history":
-            conn = sqlite3.connect('bot_data.db')
-            c = conn.cursor()
-            c.execute("SELECT action, detail, amount, date FROM history WHERE user_id=? ORDER BY date DESC LIMIT 20", (user_id,))
-            history = c.fetchall()
-            conn.close()
-            if not history:
-                text = "📜 İşlem Geçmişi\n\n❌ Henüz işlem yok."
-            else:
-                text = "📜 İşlem Geçmişi (son 20)\n\n"
-                for action, detail, amount, date in history:
-                    emoji = "🛒" if "Satın" in action else "💰" if "Ekle" in action else "📌"
-                    amount_text = f"+{amount}" if amount > 0 else str(amount)
-                    text += f"{emoji} {action}\n   📝 {detail}\n   💳 {amount_text} TL\n   📅 {date}\n\n"
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
-            try:
-                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
-            except:
-                bot.send_message(user_id, text, reply_markup=markup)
-            return
-    except Exception as e:
-        print("Callback Hata:", e)
-
-@bot.callback_query_handler(func=lambda call: call.data == "no_stock")
-def no_stock_handler(call):
-    try:
-        bot.answer_callback_query(call.id, "❌ Stokta yok!", show_alert=True)
-    except:
-        pass
-
-@bot.callback_query_handler(func=lambda call: call.data == "expired_key")
-def expired_key_handler(call):
-    try:
-        bot.answer_callback_query(call.id, "❌ Süresi dolmuş!", show_alert=True)
-    except:
-        pass
-
-if __name__ == "__main__":
-    init_db()
-    print("🤖 Bot başlatılıyor...")
-    print("✅ Bot çalışıyor!")
-    while True:
-        try:
-            bot.polling(none_stop=True, interval=0)
-        except Exception as e:
-            print(f"❌ Kritik Hata: {e}")
-            time.sleep(5)
+       
