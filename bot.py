@@ -2,6 +2,7 @@ import sqlite3
 import datetime
 import time
 import threading
+import os
 from flask import Flask
 from telebot import TeleBot, types
 
@@ -13,7 +14,8 @@ def home():
     return "Cheetah Panel Bot 7/24 Aktif ve Taş Gibi Çalışıyor! 🚀"
 
 def run_web():
-    app.run(host='0.0.0.0', port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = threading.Thread(target=run_web)
