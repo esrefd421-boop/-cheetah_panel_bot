@@ -2,18 +2,28 @@ import sqlite3
 import datetime
 import time
 import threading
+from flask import Flask
 from telebot import TeleBot, types
+
+# 7/24 Uyanık kalması için mini web sunucusu
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Cheetah Panel Bot 7/24 Aktif ve Taş Gibi Çalışıyor! 🚀"
+
+def run_web():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = threading.Thread(target=run_web)
+    t.daemon = True
+    t.start()
 
 ADMIN_ID = 1472412382
 BOT_TOKEN = "8758745776:AAG5VVacBnPaq69gVOoJRGdTNTIPY_AVz00"
 
 bot = TeleBot(BOT_TOKEN, parse_mode=None)
-
-def keep_alive():
-    while True:
-        time.sleep(60)
-
-threading.Thread(target=keep_alive, daemon=True).start()
 
 def init_db():
     try:
@@ -73,7 +83,6 @@ def create_user(user_id, username):
         c = conn.cursor()
         c.execute("INSERT OR IGNORE INTO users (user_id, username, reg_date) VALUES (?, ?, ?)",
                   (user_id, username, datetime.datetime.now().strftime("%Y-%m-%d %H:%M")))
-        # Eğer gelen kişi adminse direkt rolünü ve bakiye garantisini verelim
         if user_id == ADMIN_ID:
             c.execute("UPDATE users SET role='ADMIN', balance=10000 WHERE user_id=?", (ADMIN_ID,))
         conn.commit()
@@ -459,4 +468,137 @@ def callback_handler(call):
         if data == "reset_device":
             conn = sqlite3.connect('bot_data.db')
             c = conn.cursor()
-       
+            c.execute("SELECT key, duration, expire_date FROM keys WHERE used_by=? AND status='used'", (user_id,))
+            keys = c.fetchall()
+            conn.close()
+            if not keys:
+                text = "🔄 Cihaz Sıfırla\n\n❌ Kullanımda lisansınız yok."
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
+            else:
+                text = "🔄 Cihaz Sıfırla\n\nSadece süresi dolmamış lisanslar sıfırlanabilir!\n"
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                has_valid = False
+                for key, duration, expire_date in keys:
+                    expired = False
+                    if expire_date:
+                        try:
+                            exp = datetime.datetime.strptime(expire_date, "%Y-%m-%d %H:%M")
+                            if datetime.datetime.now() > exp:
+                                expired = True
+                        except:
+                            pass
+                    if not expired:
+                        has_valid = True
+                        markup.add(types.InlineKeyboardButton(f"⏱️ {duration} - {key[:8]}... (Aktif)", callback_data=f"reset_{key}"))
+                    else:
+                        markup.add(types.InlineKeyboardButton(f"⏱️ {duration} - {key[:8]}... (🔴 Süresi Doldu)", callback_data="expired_key"))
+                if not has_valid:
+                    text += "\n❌ Sıfırlanabilecek aktif lisans yok."
+                markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
+            try:
+                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
+            except:
+                bot.send_message(user_id, text, reply_markup=markup)
+            return
+        
+        if data.startswith("reset_"):
+            key = data.split("_")[1]
+            conn = sqlite3.connect('bot_data.db')
+            c = conn.cursor()
+            c.execute("SELECT expire_date FROM keys WHERE key=? AND used_by=?", (key, user_id))
+            result = c.fetchone()
+            if not result:
+                conn.close()
+                bot.answer_callback_query(call.id, "❌ Lisans bulunamadı!", show_alert=True)
+                return
+            expire_date = result[0]
+            if expire_date:
+                try:
+                    exp = datetime.datetime.strptime(expire_date, "%Y-%m-%d %H:%M")
+                    if datetime.datetime.now() > exp:
+                        conn.close()
+                        bot.answer_callback_query(call.id, "❌ Lisansın süresi dolmuş! Sıfırlanamaz!", show_alert=True)
+                        return
+                except:
+                    pass
+            c.execute("UPDATE keys SET hwid=NULL WHERE key=? AND used_by=?", (key, user_id))
+            conn.commit()
+            conn.close()
+            bot.answer_callback_query(call.id, "✅ Cihaz sıfırlandı!", show_alert=True)
+            markup = create_main_menu(user_id)
+            text = get_user_info_text(user_id)
+            try:
+                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
+            except:
+                bot.send_message(user_id, text, reply_markup=markup)
+            return
+        
+        if data == "support":
+            text = "📞 Destek Merkezi\n\n💬 Yardım için: @DEXTERWXP"
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
+            try:
+                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
+            except:
+                bot.send_message(user_id, text, reply_markup=markup)
+            return
+        
+        if data == "dexter":
+            text = "👤 @DEXTERWXP\n\n🔹 Kurucu ve Baş Geliştirici\n🔹 CheetahPanel Sahibi\n🔹 PUBG Mobile Hile Uzmanı\n\n📌 İletişim: @DEXTERWXP"
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
+            try:
+                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
+            except:
+                bot.send_message(user_id, text, reply_markup=markup)
+            return
+        
+        if data == "history":
+            conn = sqlite3.connect('bot_data.db')
+            c = conn.cursor()
+            c.execute("SELECT action, detail, amount, date FROM history WHERE user_id=? ORDER BY date DESC LIMIT 20", (user_id,))
+            history = c.fetchall()
+            conn.close()
+            if not history:
+                text = "📜 İşlem Geçmişi\n\n❌ Henüz işlem yok."
+            else:
+                text = "📜 İşlem Geçmişi (son 20)\n\n"
+                for action, detail, amount, date in history:
+                    emoji = "🛒" if "Satın" in action else "💰" if "Ekle" in action else "📌"
+                    amount_text = f"+{amount}" if amount > 0 else str(amount)
+                    text += f"{emoji} {action}\n   📝 {detail}\n   💳 {amount_text} TL\n   📅 {date}\n\n"
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("◀️ Geri", callback_data="main_menu"))
+            try:
+                bot.edit_message_text(text, user_id, call.message.message_id, reply_markup=markup)
+            except:
+                bot.send_message(user_id, text, reply_markup=markup)
+            return
+    except Exception as e:
+        print("Callback Hata:", e)
+
+@bot.callback_query_handler(func=lambda call: call.data == "no_stock")
+def no_stock_handler(call):
+    try:
+        bot.answer_callback_query(call.id, "❌ Stokta yok!", show_alert=True)
+    except:
+        pass
+
+@bot.callback_query_handler(func=lambda call: call.data == "expired_key")
+def expired_key_handler(call):
+    try:
+        bot.answer_callback_query(call.id, "❌ Süresi dolmuş!", show_alert=True)
+    except:
+        pass
+
+if __name__ == "__main__":
+    init_db()
+    keep_alive()  # Web sunucusunu başlatır, botun uyumasını engeller
+    print("🤖 Bot başlatılıyor ve 7/24 uyanık tutuluyor...")
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0)
+        except Exception as e:
+            print(f"❌ Kritik Hata: {e}")
+            time.sleep(5)
