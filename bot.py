@@ -2,30 +2,18 @@ import sqlite3
 import datetime
 import time
 import threading
-import os
-from flask import Flask
 from telebot import TeleBot, types
-
-# 7/24 Uyanık kalması için mini web sunucusu
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Cheetah Panel Bot 7/24 Aktif ve Taş Gibi Çalışıyor! 🚀"
-
-def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = threading.Thread(target=run_web)
-    t.daemon = True
-    t.start()
 
 ADMIN_ID = 1472412382
 BOT_TOKEN = "8758745776:AAG5VVacBnPaq69gVOoJRGdTNTIPY_AVz00"
 
 bot = TeleBot(BOT_TOKEN, parse_mode=None)
+
+def keep_alive():
+    while True:
+        time.sleep(60)
+
+threading.Thread(target=keep_alive, daemon=True).start()
 
 def init_db():
     try:
@@ -596,8 +584,8 @@ def expired_key_handler(call):
 
 if __name__ == "__main__":
     init_db()
-    keep_alive()  # Web sunucusunu başlatır, botun uyumasını engeller
-    print("🤖 Bot başlatılıyor ve 7/24 uyanık tutuluyor...")
+    print("🤖 Bot başlatılıyor...")
+    print("✅ Bot çalışıyor!")
     while True:
         try:
             bot.polling(none_stop=True, interval=0)
