@@ -9,9 +9,10 @@ BOT_TOKEN = "8758745776:AAG5VVacBnPaq69gVOoJRGdTNTIPY_AVz00"
 
 bot = TeleBot(BOT_TOKEN, parse_mode=None)
 
+# Panelin ve botun kopmamasını sağlayan arka plan kalp atışı
 def keep_alive():
     while True:
-        time.sleep(60)
+        time.sleep(30)
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
@@ -585,7 +586,6 @@ def expired_key_handler(call):
 if __name__ == "__main__":
     init_db()
     print("🤖 Bot başlatılıyor...")
-    print("✅ Bot çalışıyor!")
     while True:
         try:
             bot.polling(none_stop=True, interval=0)
